@@ -212,7 +212,14 @@
   .check-circle svg { display: none; }
   .check-circle.checked svg { display: block; }
 
-  /* ── Mobile layout (≤ 640px) ── */
+  /* Missed days banner */
+  .missed-banner { background: rgba(251,191,36,0.07); border: 1px solid rgba(251,191,36,0.22); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .missed-banner-text { flex: 1; font-size: 13px; color: var(--text); min-width: 180px; }
+  .missed-banner-text strong { color: var(--accent-warn); }
+  .missed-banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .bf-day-pill { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--border2); background: var(--bg3); color: var(--muted2); transition: all 0.15s; touch-action: manipulation; }
+  .bf-day-pill.active { background: rgba(251,191,36,0.15); border-color: var(--accent-warn); color: var(--accent-warn); }
+  .bf-day-pill.done { background: rgba(52,211,153,0.1); border-color: var(--accent-gym); color: var(--accent-gym); text-decoration: line-through; opacity: 0.6; cursor: default; }
   @media (max-width: 640px) {
     .app { flex-direction: column; height: 100dvh; }
 
@@ -381,6 +388,9 @@
         <div class="page-title" id="today-date-title">Today</div>
         <div class="page-sub" id="today-week-label">Loading...</div>
       </div>
+
+      <!-- Missed days banner (injected by JS) -->
+      <div id="missed-banner"></div>
 
       <!-- Streaks -->
       <div class="streak-row">
@@ -578,6 +588,59 @@
 </nav>
 
 
+<!-- Backfill modal -->
+<div class="modal-overlay" id="backfill-overlay" style="display:none;" onclick="closeBackfill(event)">
+  <div class="modal" id="backfill-modal">
+    <div class="modal-header">
+      <div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted)" id="backfill-label">MISSED DAY</div>
+        <div style="font-size:17px;font-weight:600;margin-top:4px" id="backfill-date-title">Log a missed day</div>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('backfill-overlay').style.display='none'">✕</button>
+    </div>
+    <div id="backfill-day-pills" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;"></div>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div class="field">
+        <label>Embedded — what did you work on?</label>
+        <textarea id="bf-emb" placeholder="Leave blank if you fully skipped" style="min-height:56px"></textarea>
+      </div>
+      <div class="field">
+        <label>DSA — problem + pattern</label>
+        <input type="text" id="bf-dsa" placeholder="e.g. Two Sum · hashmap ✓">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="field">
+          <label>Steps</label>
+          <input type="number" id="bf-steps" placeholder="8000" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label>Gym</label>
+          <select id="bf-gym">
+            <option value="">— none —</option>
+            <option value="Day 1">Day 1</option>
+            <option value="Day 3">Day 3</option>
+            <option value="Day 5">Day 5</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Energy</label>
+        <select id="bf-energy">
+          <option value="high">High</option>
+          <option value="ok" selected>OK</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;">
+      <button class="btn btn-primary" style="flex:1;min-width:120px" onclick="saveBackfill()">Save this day</button>
+      <button class="btn btn-ghost" onclick="skipBackfillDay()">Skip →</button>
+      <button class="btn btn-ghost" style="color:var(--muted)" onclick="dismissAllBackfill()">Dismiss all</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:12px;" id="backfill-progress"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-overlay" style="display:none;" onclick="closeModal(event)">
   <div class="modal" id="modal-content"></div>
 </div>
@@ -735,6 +798,9 @@ function updateSidebar() {
 
 // ─── TODAY ────────────────────────────────────────────────────────────────────
 function renderToday() {
+  // Missed days banner
+  renderMissedBanner();
+
   const now = new Date();
   const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1184,6 +1250,166 @@ function importBackup(input) {
   };
   reader.readAsText(file);
   input.value = '';
+}
+
+// ─── MISSED DAYS ─────────────────────────────────────────────────────────────
+// Returns array of date strings (YYYY-MM-DD) that are:
+// - After plan start, before today
+// - Weekdays only (Mon–Sat; Sun is rest)
+// - Not already logged
+// - Max 7 days back (don't surface ancient history)
+function getMissedDays() {
+  const logs = getLogs();
+  const loggedDates = new Set(logs.map(l => l.date));
+  const today = new Date(); today.setHours(0,0,0,0);
+  const planStart = new Date(PLAN_START); planStart.setHours(0,0,0,0);
+  const missed = [];
+  // Check up to 7 days back (excluding today)
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    if (d < planStart) break;
+    const dow = d.getDay(); // 0=Sun
+    if (dow === 0) continue; // Skip Sundays (rest day)
+    const ds = d.toISOString().split('T')[0];
+    if (!loggedDates.has(ds)) missed.push(ds);
+  }
+  return missed.reverse(); // oldest first
+}
+
+function friendlyDate(ds) {
+  const d = new Date(ds + 'T00:00:00');
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
+}
+
+// ── Banner ────────────────────────────────────────────────────────────────────
+function renderMissedBanner() {
+  const el = document.getElementById('missed-banner');
+  const missed = getMissedDays();
+  // Also check: did user already log today?
+  const todayLogged = !!getLogs().find(l => l.date === todayStr());
+
+  if (missed.length === 0) { el.innerHTML = ''; return; }
+
+  const count = missed.length;
+  const label = count === 1
+    ? `You missed <strong>1 day</strong> (${friendlyDate(missed[0])})`
+    : `You missed <strong>${count} days</strong> since ${friendlyDate(missed[0])}`;
+
+  el.innerHTML = `
+    <div class="missed-banner">
+      <div class="missed-banner-text">${label} — log them or skip?</div>
+      <div class="missed-banner-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openBackfill()" style="border-color:rgba(251,191,36,0.4);color:var(--accent-warn)">Log missed days</button>
+        <button class="btn btn-ghost btn-sm" onclick="dismissAllBackfill()" style="font-size:11px">Dismiss</button>
+      </div>
+    </div>`;
+}
+
+// ── Backfill modal ────────────────────────────────────────────────────────────
+let backfillQueue = []; // dates to backfill, oldest first
+let backfillIdx = 0;    // current index in queue
+
+function openBackfill() {
+  backfillQueue = getMissedDays();
+  // Filter out any already backfilled in this session
+  const logged = new Set(getLogs().map(l => l.date));
+  backfillQueue = backfillQueue.filter(d => !logged.has(d));
+  if (backfillQueue.length === 0) { renderMissedBanner(); return; }
+  backfillIdx = 0;
+  showBackfillDay();
+  document.getElementById('backfill-overlay').style.display = 'flex';
+}
+
+function showBackfillDay() {
+  if (backfillIdx >= backfillQueue.length) {
+    document.getElementById('backfill-overlay').style.display = 'none';
+    renderMissedBanner();
+    renderToday();
+    return;
+  }
+  const ds = backfillQueue[backfillIdx];
+  const logged = new Set(getLogs().map(l => l.date));
+
+  // Header
+  document.getElementById('backfill-label').textContent =
+    `MISSED DAY ${backfillIdx + 1} OF ${backfillQueue.length}`;
+  document.getElementById('backfill-date-title').textContent = friendlyDate(ds);
+
+  // Day pills
+  document.getElementById('backfill-day-pills').innerHTML = backfillQueue.map((d, i) => `
+    <span class="bf-day-pill ${i === backfillIdx ? 'active' : ''} ${logged.has(d) ? 'done' : ''}"
+      onclick="${logged.has(d) ? '' : `jumpBackfill(${i})`}">${friendlyDate(d)}</span>
+  `).join('');
+
+  // Progress
+  const done = backfillQueue.filter(d => logged.has(d)).length;
+  document.getElementById('backfill-progress').textContent =
+    `${done} of ${backfillQueue.length} logged`;
+
+  // Clear form
+  document.getElementById('bf-emb').value = '';
+  document.getElementById('bf-dsa').value = '';
+  document.getElementById('bf-steps').value = '';
+  document.getElementById('bf-gym').value = '';
+  document.getElementById('bf-energy').value = 'ok';
+}
+
+function jumpBackfill(i) {
+  backfillIdx = i;
+  showBackfillDay();
+}
+
+function saveBackfill() {
+  const ds = backfillQueue[backfillIdx];
+  const logs = getLogs();
+  const entry = {
+    date: ds,
+    emb: document.getElementById('bf-emb').value.trim(),
+    dsa: document.getElementById('bf-dsa').value.trim(),
+    steps: document.getElementById('bf-steps').value,
+    gym: document.getElementById('bf-gym').value,
+    energy: document.getElementById('bf-energy').value,
+    note: '(backfilled)',
+  };
+  const idx = logs.findIndex(l => l.date === ds);
+  if (idx >= 0) logs[idx] = entry; else logs.push(entry);
+  saveLogs(logs);
+  backfillIdx++;
+  showBackfillDay();
+}
+
+function skipBackfillDay() {
+  // Mark as "skipped" with a minimal stub so it won't surface again
+  const ds = backfillQueue[backfillIdx];
+  const logs = getLogs();
+  if (!logs.find(l => l.date === ds)) {
+    logs.push({ date: ds, emb:'', dsa:'', steps:'', gym:'', energy:'ok', note:'(skipped)', skipped: true });
+    saveLogs(logs);
+  }
+  backfillIdx++;
+  showBackfillDay();
+}
+
+function dismissAllBackfill() {
+  // Stub all remaining unlogged missed days as skipped silently
+  const logs = getLogs();
+  const logged = new Set(logs.map(l => l.date));
+  getMissedDays().forEach(ds => {
+    if (!logged.has(ds)) {
+      logs.push({ date: ds, emb:'', dsa:'', steps:'', gym:'', energy:'ok', note:'(skipped)', skipped: true });
+    }
+  });
+  saveLogs(logs);
+  document.getElementById('backfill-overlay').style.display = 'none';
+  renderMissedBanner();
+  renderToday();
+}
+
+function closeBackfill(e) {
+  if (e.target.id === 'backfill-overlay') document.getElementById('backfill-overlay').style.display = 'none';
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
