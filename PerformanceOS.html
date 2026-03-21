@@ -1104,6 +1104,15 @@ function getOverloadHint(lastVal, key) {
   return lastVal;
 }
 
+function parseTarget(target) {
+  // e.g. "4 × 8–12" → { sets: "4", reps: "8-12" }
+  //      "3 × 15–20" → { sets: "3", reps: "15-20" }
+  //      "3 × 10–15" → { sets: "3", reps: "10-15" }
+  const m = target.replace(/–/g, '-').match(/(\d+)\s*[×x]\s*([\d\-]+)/);
+  if (!m) return { sets: '3', reps: '' };
+  return { sets: m[1], reps: m[2] };
+}
+
 function renderGymForm() {
   const exercises = GYM_DAYS[activeGymDay];
   const last = getLastGymSession(activeGymDay);
@@ -1119,7 +1128,6 @@ function renderGymForm() {
     </div>`;
 
   if (!mobile) {
-    // Desktop: grid header row
     html += `<div class="gym-header-row" style="display:grid;grid-template-columns:1fr 80px 80px 80px;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
       <div class="ex-header">Exercise</div>
       <div class="ex-header" style="text-align:center">kg</div>
@@ -1136,6 +1144,11 @@ function renderGymForm() {
       <span class="ex-alt-toggle" onclick="toggleAlt('alt-${i}', this)">⇄ show alternative</span>
       <div class="ex-alt" id="alt-${i}">${ex.alt}</div>` : '';
 
+    const parsed = parseTarget(ex.target);
+    // If previous session exists use those values as placeholders, else use target range
+    const repPlaceholder = lastData ? lastData.reps : parsed.reps;
+    const setPlaceholder = lastData ? lastData.sets : parsed.sets;
+
     if (mobile) {
       html += `
         <div class="gym-exercise-block">
@@ -1148,15 +1161,15 @@ function renderGymForm() {
           <div class="gym-inputs-row">
             <div class="field">
               <label>Weight (kg)</label>
-              <input type="number" class="input-sm" id="gym-weight-${i}" placeholder="${lastData?lastData.weight:''}" step="2.5" min="0" inputmode="decimal">
+              <input type="number" class="input-sm" id="gym-weight-${i}" placeholder="${lastData?lastData.weight:'kg'}" step="2.5" min="0" inputmode="decimal">
             </div>
             <div class="field">
               <label>Reps</label>
-              <input type="number" class="input-sm" id="gym-reps-${i}" placeholder="${lastData?lastData.reps:''}" min="0" max="30" inputmode="numeric">
+              <input type="number" class="input-sm" id="gym-reps-${i}" placeholder="${repPlaceholder}" min="0" max="30" inputmode="numeric">
             </div>
             <div class="field">
               <label>Sets</label>
-              <input type="number" class="input-sm" id="gym-sets-${i}" placeholder="3" min="0" max="6" inputmode="numeric">
+              <input type="number" class="input-sm" id="gym-sets-${i}" placeholder="${setPlaceholder}" min="0" max="6" inputmode="numeric">
             </div>
           </div>
         </div>`;
@@ -1169,9 +1182,9 @@ function renderGymForm() {
             <div class="${hintClass}">${hintText}</div>
             ${altHtml}
           </div>
-          <input type="number" class="input-sm" id="gym-weight-${i}" placeholder="${lastData?lastData.weight:''}" step="2.5" min="0" style="margin-top:2px">
-          <input type="number" class="input-sm" id="gym-reps-${i}" placeholder="${lastData?lastData.reps:''}" min="0" max="30" style="margin-top:2px">
-          <input type="number" class="input-sm" id="gym-sets-${i}" placeholder="3" min="0" max="6" style="margin-top:2px">
+          <input type="number" class="input-sm" id="gym-weight-${i}" placeholder="${lastData?lastData.weight:'kg'}" step="2.5" min="0" style="margin-top:2px">
+          <input type="number" class="input-sm" id="gym-reps-${i}" placeholder="${repPlaceholder}" min="0" max="30" style="margin-top:2px">
+          <input type="number" class="input-sm" id="gym-sets-${i}" placeholder="${setPlaceholder}" min="0" max="6" style="margin-top:2px">
         </div>`;
     }
   });
