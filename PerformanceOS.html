@@ -715,11 +715,11 @@ async function sbGet(table, query = '') {
   }
   return r.json();
 }
-async function sbUpsert(table, body) {
+async function sbUpsert(table, body, onConflict) {
   const rows = Array.isArray(body) ? body : [body];
-  // Strip server-generated fields so all rows have identical keys
   const clean = rows.map(({ id, created_at, ...rest }) => rest);
-  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+  const url = `${SB_URL}/rest/v1/${table}?on_conflict=${onConflict}`;
+  const r = await fetch(url, {
     method: 'POST',
     headers: { ...SB_H, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(clean),
@@ -755,22 +755,22 @@ const getReviews     = () => LS.get('pos_reviews')    || [];
 // Write: update cache immediately, then push to Supabase in background
 function saveLogs(v) {
   LS.set('pos_logs', v);
-  if (v.length) sbUpsert('pos_logs', v).then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
+  if (v.length) sbUpsert('pos_logs', v, 'date').then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
 }
 function saveGymSessions(v) {
   LS.set('pos_gym', v);
-  if (v.length) sbUpsert('pos_gym', v).then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
+  if (v.length) sbUpsert('pos_gym', v, 'date,day').then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
 }
 function saveWeeksDone(v) {
   LS.set('pos_weeks_done', v);
   sbDelete('pos_weeks_done', '?week_num=gte.1')
-    .then(() => v.length ? sbUpsert('pos_weeks_done', v.map(w => ({ week_num: w }))) : null)
+    .then(() => v.length ? sbUpsert('pos_weeks_done', v.map(w => ({ week_num: w })), 'week_num') : null)
     .then(() => setSyncStatus('ok'))
     .catch(() => setSyncStatus('error'));
 }
 function saveReviews(v) {
   LS.set('pos_reviews', v);
-  if (v.length) sbUpsert('pos_reviews', v).then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
+  if (v.length) sbUpsert('pos_reviews', v, 'date').then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
 }
 
 // Initial load: pull all data from Supabase → fill cache → re-render
