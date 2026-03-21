@@ -716,10 +716,13 @@ async function sbGet(table, query = '') {
   return r.json();
 }
 async function sbUpsert(table, body) {
+  const rows = Array.isArray(body) ? body : [body];
+  // Strip server-generated fields so all rows have identical keys
+  const clean = rows.map(({ id, created_at, ...rest }) => rest);
   const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
     method: 'POST',
     headers: { ...SB_H, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify(Array.isArray(body) ? body : [body]),
+    body: JSON.stringify(clean),
   });
   if (!r.ok) {
     const t = await r.text();
