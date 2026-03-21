@@ -212,6 +212,12 @@
   .check-circle svg { display: none; }
   .check-circle.checked svg { display: block; }
 
+  /* Alt exercise */
+  .ex-alt { font-size: 10px; color: var(--muted); margin-top: 4px; line-height: 1.45; padding: 4px 8px; background: var(--bg4); border-radius: 3px; border-left: 2px solid rgba(167,139,250,0.3); display: none; }
+  .ex-alt.open { display: block; }
+  .ex-alt-toggle { font-size: 10px; color: var(--accent-emb); cursor: pointer; margin-top: 3px; display: inline-flex; align-items: center; gap: 3px; opacity: 0.8; touch-action: manipulation; user-select: none; }
+  .ex-alt-toggle:active { opacity: 1; }
+
   /* Missed days banner */
   .missed-banner { background: rgba(251,191,36,0.07); border: 1px solid rgba(251,191,36,0.22); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .missed-banner-text { flex: 1; font-size: 13px; color: var(--text); min-width: 180px; }
@@ -361,7 +367,10 @@
         <div class="prog-bar"><div class="prog-fill" id="sidebar-prog" style="background:var(--accent-emb);width:0%"></div></div>
       </div>
       <div class="week-badge" style="margin-top:4px"><span id="sidebar-days">0</span> of 98 days</div>
-      <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
+      <div style="margin-top:12px;">
+        <div id="sync-status" style="font-size:10px;font-family:var(--mono);color:var(--muted);">◌ Loading…</div>
+      </div>
+      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:14px;">
         <div id="backup-status" style="font-size:10px;color:var(--muted);margin-bottom:10px;font-family:var(--mono);">Backup: checking...</div>
         <div style="display:flex;flex-direction:column;gap:6px;">
           <button class="btn btn-ghost btn-sm" style="width:100%;font-size:11px;text-align:left;padding:6px 10px;" onclick="manualExport()">↓ Export backup now</button>
@@ -670,41 +679,158 @@ const WEEKS = [
 
 const GYM_DAYS = {
   '1': [
-    { name: 'Barbell Bench Press', target: '3 × 10–15', key: 'bench' },
-    { name: 'Goblet Squat', target: '3 × 10–15', key: 'goblet' },
-    { name: 'Romanian Deadlift (RDL)', target: '3 × 10–15', key: 'rdl' },
-    { name: 'Seated Cable Row', target: '3 × 10–15', key: 'cable_row' },
-    { name: 'Crunches', target: '3 × 15–20', key: 'crunches' },
+    { name: 'Machine Press',          target: '4 × 8–12',  key: 'machine_press' },
+    { name: 'Goblet Squat',           target: '3 × 8–12',  key: 'goblet' },
+    { name: 'Dumbbell RDL',           target: '3 × 10–15', key: 'db_rdl' },
+    { name: 'Machine Row',            target: '3 × 8–12',  key: 'machine_row' },
+    { name: 'Dumbbell Lateral Raise', target: '4 × 10–15', key: 'lateral' },
+    { name: 'Crunches',               target: '3 × 15–20', key: 'crunches' },
   ],
   '3': [
-    { name: 'Goblet Squat', target: '3 × 10–15', key: 'goblet' },
-    { name: 'Lat Pulldown (Mag-Grip)', target: '4 × 10–15', key: 'pulldown' },
-    { name: 'Barbell Bench Press', target: '3 × 10–15', key: 'bench' },
-    { name: 'Romanian Deadlift (RDL)', target: '3 × 10–15', key: 'rdl' },
-    { name: 'Leg Raises', target: '3 × 15–20', key: 'leg_raise' },
+    { name: 'Romanian Deadlift (Barbell)', target: '3 × 8–12',  key: 'rdl_bar' },
+    { name: 'Incline Dumbbell Press',      target: '4 × 8–12',  key: 'incline_press' },
+    { name: 'Leg Extension',               target: '4 × 10–15', key: 'leg_ext' },
+    { name: 'Dumbbell Row',                target: '3 × 8–12',  key: 'db_row',   alt: 'Alt if bench taken: Chest-Supported DB Row — lie face-down on incline machine, row both DBs' },
+    { name: 'Calf Raise',                  target: '3 × 10–15', key: 'calf',     alt: 'No machine: Standing DB Calf Raise — hold DBs, raise heels on floor or bench edge' },
+    { name: 'Leg Raises',                  target: '3 × 15–20', key: 'leg_raise' },
   ],
   '5': [
-    { name: 'Romanian Deadlift (RDL)', target: '3 × 10–15', key: 'rdl' },
-    { name: 'Barbell Bench Press', target: '3 × 10–15', key: 'bench' },
-    { name: 'Goblet Squat', target: '3 × 10–15', key: 'goblet' },
-    { name: 'Chest-Supported T-Bar Row', target: '4 × 10–15', key: 'tbar' },
-    { name: 'Cable Lateral Raise', target: '3 × 15–20', key: 'lateral' },
+    { name: 'Barbell Row',         target: '3 × 8–12',  key: 'barbell_row' },
+    { name: 'Upper Back Dumb Row', target: '3 × 8–12',  key: 'ub_db_row',   alt: 'Alt if bench taken: Chest-Supported DB Row — lie face-down on incline machine, row both DBs' },
+    { name: 'Split Squat',         target: '3 × 8–12',  key: 'split_squat', alt: 'Alt if bench taken: Walking Lunges with DBs — same quad/glute stimulus, no bench needed' },
+    { name: 'Seated Leg Curl',     target: '3 × 10–15', key: 'leg_curl' },
+    { name: 'Flat Dumbbell Fly',   target: '3 × 10–15', key: 'db_fly',      alt: 'Alt if bench taken: Incline DB Fly — set incline to 30°, same movement, slight upper chest shift' },
+    { name: 'Y Raise',             target: '4 × 15–20', key: 'y_raise',     alt: 'Alt if bench taken: Standing Y Raise — hinge forward 45° at hips, raise DBs in Y shape' },
   ],
 };
 
-// ─── STORAGE ─────────────────────────────────────────────────────────────────
+// ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
+const SB_URL = 'https://alqwqfdlhmtljseunykx.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFscXdxZmRsaG10bGpzZXVueWt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNzQ5MTUsImV4cCI6MjA4OTY1MDkxNX0.Lo9QVBSIsPUJFGMIntXC42ormhVkjOTHQgB1Y7FbEaI';
+const SB_H = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'apikey': SB_KEY,
+  'Authorization': `Bearer ${SB_KEY}`,
+};
+
+async function sbGet(table, query = '') {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}${query}`, {
+    method: 'GET',
+    headers: SB_H,
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(`${table} GET ${r.status}: ${t}`);
+  }
+  return r.json();
+}
+async function sbUpsert(table, body) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: { ...SB_H, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(Array.isArray(body) ? body : [body]),
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(`${table} UPSERT ${r.status}: ${t}`);
+  }
+}
+async function sbDelete(table, query) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}${query}`, {
+    method: 'DELETE',
+    headers: SB_H,
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(`${table} DELETE ${r.status}: ${t}`);
+  }
+}
+
+// ─── STORAGE (localStorage cache + Supabase) ─────────────────────────────────
 const LS = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
 };
-const getLogs = () => LS.get('pos_logs') || [];
-const saveLogs = v => LS.set('pos_logs', v);
-const getGymSessions = () => LS.get('pos_gym') || [];
-const saveGymSessions = v => LS.set('pos_gym', v);
-const getWeeksDone = () => LS.get('pos_weeks_done') || [];
-const saveWeeksDone = v => LS.set('pos_weeks_done', v);
-const getReviews = () => LS.get('pos_reviews') || [];
-const saveReviews = v => LS.set('pos_reviews', v);
+
+// Synchronous cache reads — used by all render functions
+const getLogs        = () => LS.get('pos_logs')       || [];
+const getGymSessions = () => LS.get('pos_gym')        || [];
+const getWeeksDone   = () => LS.get('pos_weeks_done') || [];
+const getReviews     = () => LS.get('pos_reviews')    || [];
+
+// Write: update cache immediately, then push to Supabase in background
+function saveLogs(v) {
+  LS.set('pos_logs', v);
+  if (v.length) sbUpsert('pos_logs', v).then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
+}
+function saveGymSessions(v) {
+  LS.set('pos_gym', v);
+  if (v.length) sbUpsert('pos_gym', v).then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
+}
+function saveWeeksDone(v) {
+  LS.set('pos_weeks_done', v);
+  sbDelete('pos_weeks_done', '?week_num=gte.1')
+    .then(() => v.length ? sbUpsert('pos_weeks_done', v.map(w => ({ week_num: w }))) : null)
+    .then(() => setSyncStatus('ok'))
+    .catch(() => setSyncStatus('error'));
+}
+function saveReviews(v) {
+  LS.set('pos_reviews', v);
+  if (v.length) sbUpsert('pos_reviews', v).then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
+}
+
+// Initial load: pull all data from Supabase → fill cache → re-render
+async function loadFromSupabase() {
+  setSyncStatus('syncing');
+  try {
+    const [logs, gym, weeks, reviews] = await Promise.all([
+      sbGet('pos_logs',       '?order=date.desc&limit=300'),
+      sbGet('pos_gym',        '?order=date.desc&limit=300'),
+      sbGet('pos_weeks_done', ''),
+      sbGet('pos_reviews',    '?order=date.desc&limit=100'),
+    ]);
+    LS.set('pos_logs',       logs    || []);
+    LS.set('pos_gym',        gym     || []);
+    LS.set('pos_weeks_done', (weeks  || []).map(r => r.week_num));
+    LS.set('pos_reviews',    reviews || []);
+    setSyncStatus('ok');
+    renderToday();
+    renderPlan();
+    renderGymForm();
+  } catch(e) {
+    console.error('Supabase load failed:', e.message);
+    // Show specific hint in UI
+    const el = document.getElementById('sync-status');
+    if (el) {
+      if (e.message.includes('Failed to fetch')) {
+        el.textContent = '✕ CORS — add github.io to Supabase allowed origins';
+      } else if (e.message.includes('401') || e.message.includes('403')) {
+        el.textContent = '✕ RLS blocking — disable RLS on tables in Supabase';
+      } else if (e.message.includes('404') || e.message.includes('relation')) {
+        el.textContent = '✕ Tables missing — run SQL setup in Supabase';
+      } else {
+        el.textContent = `✕ ${e.message.substring(0, 60)}`;
+      }
+      el.style.color = 'var(--accent-red)';
+    }
+  }
+}
+
+function setSyncStatus(state) {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  const map = {
+    syncing: ['⟳ Syncing…',     'var(--accent-warn)'],
+    ok:      ['✓ Synced',        'var(--accent-gym)' ],
+    error:   ['✕ Sync error',    'var(--accent-red)' ],
+    offline: ['◌ Offline cache', 'var(--muted)'      ],
+  };
+  const [text, color] = map[state] || map.offline;
+  el.textContent = text;
+  el.style.color = color;
+}
+
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
 function todayStr() {
@@ -1013,6 +1139,9 @@ function renderGymForm() {
     const lastData = last && last.exercises ? last.exercises[ex.key] : null;
     const hintText = lastData ? `Last: ${lastData.weight}kg × ${lastData.reps} × ${lastData.sets}` : 'First session';
     const hintClass = lastData ? 'overload-hint' : 'overload-hint keep';
+    const altHtml = ex.alt ? `
+      <span class="ex-alt-toggle" onclick="toggleAlt('alt-${i}', this)">⇄ show alternative</span>
+      <div class="ex-alt" id="alt-${i}">${ex.alt}</div>` : '';
 
     if (mobile) {
       html += `
@@ -1021,6 +1150,7 @@ function renderGymForm() {
             <div class="ex-name">${ex.name}</div>
             <div class="ex-target">${ex.target}</div>
             <div class="${hintClass}">${hintText}</div>
+            ${altHtml}
           </div>
           <div class="gym-inputs-row">
             <div class="field">
@@ -1039,15 +1169,16 @@ function renderGymForm() {
         </div>`;
     } else {
       html += `
-        <div style="display:grid;grid-template-columns:1fr 80px 80px 80px;gap:8px;padding:12px 0;border-bottom:1px solid var(--border);align-items:center">
+        <div style="display:grid;grid-template-columns:1fr 80px 80px 80px;gap:8px;padding:12px 0;border-bottom:1px solid var(--border);align-items:start">
           <div>
             <div class="ex-name">${ex.name}</div>
             <div class="ex-target">${ex.target}</div>
             <div class="${hintClass}">${hintText}</div>
+            ${altHtml}
           </div>
-          <input type="number" class="input-sm" id="gym-weight-${i}" placeholder="${lastData?lastData.weight:''}" step="2.5" min="0">
-          <input type="number" class="input-sm" id="gym-reps-${i}" placeholder="${lastData?lastData.reps:''}" min="0" max="30">
-          <input type="number" class="input-sm" id="gym-sets-${i}" placeholder="3" min="0" max="6">
+          <input type="number" class="input-sm" id="gym-weight-${i}" placeholder="${lastData?lastData.weight:''}" step="2.5" min="0" style="margin-top:2px">
+          <input type="number" class="input-sm" id="gym-reps-${i}" placeholder="${lastData?lastData.reps:''}" min="0" max="30" style="margin-top:2px">
+          <input type="number" class="input-sm" id="gym-sets-${i}" placeholder="3" min="0" max="6" style="margin-top:2px">
         </div>`;
     }
   });
@@ -1070,6 +1201,12 @@ function renderGymForm() {
         </div>
       </div>`).join('');
   document.getElementById('gym-history').innerHTML = histHtml;
+}
+
+function toggleAlt(id, el) {
+  const box = document.getElementById(id);
+  const open = box.classList.toggle('open');
+  el.textContent = open ? '⇄ hide alternative' : '⇄ show alternative';
 }
 
 function saveGymSession() {
@@ -1419,6 +1556,7 @@ renderToday();
 renderPlan();
 renderGymForm();
 autoExportIfNeeded();
+loadFromSupabase();
 </script>
 </body>
 </html>
