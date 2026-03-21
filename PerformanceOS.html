@@ -370,16 +370,6 @@
       <div style="margin-top:12px;">
         <div id="sync-status" style="font-size:10px;font-family:var(--mono);color:var(--muted);">◌ Loading…</div>
       </div>
-      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:14px;">
-        <div id="backup-status" style="font-size:10px;color:var(--muted);margin-bottom:10px;font-family:var(--mono);">Backup: checking...</div>
-        <div style="display:flex;flex-direction:column;gap:6px;">
-          <button class="btn btn-ghost btn-sm" style="width:100%;font-size:11px;text-align:left;padding:6px 10px;" onclick="manualExport()">↓ Export backup now</button>
-          <label class="btn btn-ghost btn-sm" style="width:100%;font-size:11px;text-align:left;padding:6px 10px;cursor:pointer;">
-            ↑ Import backup
-            <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importBackup(this)">
-          </label>
-        </div>
-      </div>
     </div>
   </aside>
 
@@ -1303,92 +1293,6 @@ function saveReview() {
   renderReview();
 }
 
-// ─── BACKUP ───────────────────────────────────────────────────────────────────
-function getAllData() {
-  return {
-    exportedAt: new Date().toISOString(),
-    version: 1,
-    logs: getLogs(),
-    gym: getGymSessions(),
-    weeksDone: getWeeksDone(),
-    reviews: getReviews(),
-  };
-}
-
-function triggerDownload(data, filename) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
-
-function manualExport() {
-  triggerDownload(getAllData(), `performanceos-backup-${todayStr()}.json`);
-  LS.set('pos_last_backup', todayStr());
-  updateBackupStatus();
-}
-
-function autoExportIfNeeded() {
-  const lastBackup = LS.get('pos_last_backup');
-  const today = todayStr();
-  if (lastBackup === today) { updateBackupStatus(); return; }
-  const hasData = getLogs().length > 0 || getGymSessions().length > 0;
-  if (!hasData) { updateBackupStatus(); return; }
-  setTimeout(() => {
-    triggerDownload(getAllData(), `performanceos-backup-${today}.json`);
-    LS.set('pos_last_backup', today);
-    updateBackupStatus();
-  }, 1200);
-}
-
-function updateBackupStatus() {
-  const last = LS.get('pos_last_backup');
-  const el = document.getElementById('backup-status');
-  if (!el) return;
-  if (!last) { el.textContent = 'Backup: none yet'; el.style.color = 'var(--muted)'; }
-  else if (last === todayStr()) { el.textContent = '✓ Backed up today'; el.style.color = 'var(--accent-gym)'; }
-  else { el.textContent = `Last backup: ${last}`; el.style.color = 'var(--accent-warn)'; }
-}
-
-function importBackup(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const data = JSON.parse(e.target.result);
-      if (!data.version || !Array.isArray(data.logs)) { alert('Invalid backup file.'); return; }
-      const existing = getLogs().length + getGymSessions().length;
-      const msg = existing > 0
-        ? `Merge imported data with your ${existing} existing entries? Same-date logs will be overwritten by the import.`
-        : 'Import this backup?';
-      if (!confirm(msg)) return;
-      // Merge logs
-      const merged = [...getLogs()];
-      (data.logs || []).forEach(il => {
-        const idx = merged.findIndex(l => l.date === il.date);
-        if (idx >= 0) merged[idx] = il; else merged.push(il);
-      });
-      saveLogs(merged);
-      // Merge gym
-      const eg = getGymSessions();
-      const ng = (data.gym || []).filter(ig => !eg.some(e => e.date === ig.date && e.day === ig.day));
-      saveGymSessions([...eg, ...ng]);
-      // Merge weeks + reviews
-      saveWeeksDone([...new Set([...getWeeksDone(), ...(data.weeksDone || [])])]);
-      const er = getReviews();
-      saveReviews([...er, ...(data.reviews || []).filter(ir => !er.some(e => e.date === ir.date))]);
-      LS.set('pos_last_backup', todayStr());
-      updateBackupStatus();
-      renderToday();
-      alert(`✓ Import complete. ${merged.length} daily logs, ${eg.length + ng.length} gym sessions loaded.`);
-    } catch { alert('Could not read file. Make sure it is a valid PerformanceOS backup.'); }
-  };
-  reader.readAsText(file);
-  input.value = '';
-}
-
 // ─── MISSED DAYS ─────────────────────────────────────────────────────────────
 // Returns array of date strings (YYYY-MM-DD) that are:
 // - After plan start, before today
@@ -1555,7 +1459,6 @@ updateMobileHeader();
 renderToday();
 renderPlan();
 renderGymForm();
-autoExportIfNeeded();
 loadFromSupabase();
 </script>
 </body>
