@@ -951,8 +951,15 @@ function renderToday() {
   document.getElementById('streak-emb').textContent = getStreak('emb') + 'd';
   document.getElementById('streak-dsa').textContent = getStreak('dsa') + 'd';
 
-  // Gym this week
-  const gymCount = logsThisWeek().filter(l => l.gym).length;
+  // Gym this week — count from actual gym sessions, not daily log
+  const wn = currentWeekNum();
+  const wStart = new Date(PLAN_START);
+  wStart.setDate(wStart.getDate() + (wn - 1) * 7);
+  const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 6);
+  const gymCount = getGymSessions().filter(s => {
+    const d = new Date(s.date + 'T00:00:00');
+    return d >= wStart && d <= wEnd;
+  }).length;
   document.getElementById('streak-gym').textContent = `${gymCount}/3`;
 
   // Steps avg 7d
@@ -1286,7 +1293,15 @@ function renderReview() {
   const wlogs = logsThisWeek();
   const embDays = wlogs.filter(l => l.emb).length;
   const dsaDays = wlogs.filter(l => l.dsa).length;
-  const gymDays = wlogs.filter(l => l.gym).length;
+  // Count gym from actual sessions this week
+  const wn = currentWeekNum();
+  const wStart = new Date(PLAN_START);
+  wStart.setDate(wStart.getDate() + (wn - 1) * 7);
+  const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 6);
+  const gymDays = getGymSessions().filter(s => {
+    const d = new Date(s.date + 'T00:00:00');
+    return d >= wStart && d <= wEnd;
+  }).length;
   document.getElementById('rv-emb-days').textContent = `${embDays}/5`;
   document.getElementById('rv-dsa-days').textContent = `${dsaDays}/5`;
   document.getElementById('rv-gym-days').textContent = `${gymDays}/3`;
