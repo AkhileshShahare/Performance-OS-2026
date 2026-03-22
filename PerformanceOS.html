@@ -952,7 +952,6 @@ function renderToday() {
   document.getElementById('streak-dsa').textContent = getStreak('dsa') + 'd';
 
   // Gym this week — count from actual gym sessions, not daily log
-  const wn = currentWeekNum();
   const wStart = new Date(PLAN_START);
   wStart.setDate(wStart.getDate() + (wn - 1) * 7);
   const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 6);
