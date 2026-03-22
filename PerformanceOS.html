@@ -378,7 +378,10 @@
     <!-- Mobile header (hidden on desktop via CSS) -->
     <div class="mobile-header" style="display:none" id="mobile-header">
       <span class="mobile-header-title">PERFORMANCE OS</span>
-      <span class="mobile-header-week" id="mobile-week-label">Week 1</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="mobile-sync-status" style="font-size:10px;font-family:var(--mono);color:var(--muted);">◌ Loading…</span>
+        <span class="mobile-header-week" id="mobile-week-label">Week 1</span>
+      </div>
     </div>
 
     <!-- TODAY TAB -->
@@ -740,40 +743,49 @@ async function sbDelete(table, query) {
   }
 }
 
-// ─── STORAGE (localStorage cache + Supabase) ─────────────────────────────────
-const LS = {
-  get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
-};
+// ─── IN-MEMORY STORE (source of truth = Supabase, no localStorage) ───────────
+const DB = { logs: [], gym: [], weeksDone: [], reviews: [] };
 
-// Synchronous cache reads — used by all render functions
-const getLogs        = () => LS.get('pos_logs')       || [];
-const getGymSessions = () => LS.get('pos_gym')        || [];
-const getWeeksDone   = () => LS.get('pos_weeks_done') || [];
-const getReviews     = () => LS.get('pos_reviews')    || [];
+const getLogs        = () => DB.logs;
+const getGymSessions = () => DB.gym;
+const getWeeksDone   = () => DB.weeksDone;
+const getReviews     = () => DB.reviews;
 
-// Write: update cache immediately, then push to Supabase in background
-function saveLogs(v) {
-  LS.set('pos_logs', v);
-  if (v.length) sbUpsert('pos_logs', v, 'date').then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
+async function saveLogs(v) {
+  DB.logs = v;
+  setSyncStatus('syncing');
+  try {
+    if (v.length) await sbUpsert('pos_logs', v, 'date');
+    setSyncStatus('ok');
+  } catch(e) { console.error(e); setSyncStatus('error'); }
 }
-function saveGymSessions(v) {
-  LS.set('pos_gym', v);
-  if (v.length) sbUpsert('pos_gym', v, 'date,day').then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
+async function saveGymSessions(v) {
+  DB.gym = v;
+  setSyncStatus('syncing');
+  try {
+    if (v.length) await sbUpsert('pos_gym', v, 'date,day');
+    setSyncStatus('ok');
+  } catch(e) { console.error(e); setSyncStatus('error'); }
 }
-function saveWeeksDone(v) {
-  LS.set('pos_weeks_done', v);
-  sbDelete('pos_weeks_done', '?week_num=gte.1')
-    .then(() => v.length ? sbUpsert('pos_weeks_done', v.map(w => ({ week_num: w })), 'week_num') : null)
-    .then(() => setSyncStatus('ok'))
-    .catch(() => setSyncStatus('error'));
+async function saveWeeksDone(v) {
+  DB.weeksDone = v;
+  setSyncStatus('syncing');
+  try {
+    await sbDelete('pos_weeks_done', '?week_num=gte.1');
+    if (v.length) await sbUpsert('pos_weeks_done', v.map(w => ({ week_num: w })), 'week_num');
+    setSyncStatus('ok');
+  } catch(e) { console.error(e); setSyncStatus('error'); }
 }
-function saveReviews(v) {
-  LS.set('pos_reviews', v);
-  if (v.length) sbUpsert('pos_reviews', v, 'date').then(() => setSyncStatus('ok')).catch(() => setSyncStatus('error'));
+async function saveReviews(v) {
+  DB.reviews = v;
+  setSyncStatus('syncing');
+  try {
+    if (v.length) await sbUpsert('pos_reviews', v, 'date');
+    setSyncStatus('ok');
+  } catch(e) { console.error(e); setSyncStatus('error'); }
 }
 
-// Initial load: pull all data from Supabase → fill cache → re-render
+// Load everything from Supabase into memory, then render
 async function loadFromSupabase() {
   setSyncStatus('syncing');
   try {
@@ -783,45 +795,49 @@ async function loadFromSupabase() {
       sbGet('pos_weeks_done', ''),
       sbGet('pos_reviews',    '?order=date.desc&limit=100'),
     ]);
-    LS.set('pos_logs',       logs    || []);
-    LS.set('pos_gym',        gym     || []);
-    LS.set('pos_weeks_done', (weeks  || []).map(r => r.week_num));
-    LS.set('pos_reviews',    reviews || []);
+    DB.logs      = logs    || [];
+    DB.gym       = gym     || [];
+    DB.weeksDone = (weeks  || []).map(r => r.week_num);
+    DB.reviews   = reviews || [];
     setSyncStatus('ok');
     renderToday();
     renderPlan();
     renderGymForm();
+    if (document.getElementById('tab-history').classList.contains('active')) renderHistory();
+    if (document.getElementById('tab-review').classList.contains('active')) renderReview();
   } catch(e) {
     console.error('Supabase load failed:', e.message);
-    // Show specific hint in UI
-    const el = document.getElementById('sync-status');
-    if (el) {
+    const ids = ['sync-status', 'mobile-sync-status'];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
       if (e.message.includes('Failed to fetch')) {
-        el.textContent = '✕ CORS — add github.io to Supabase allowed origins';
+        el.textContent = '✕ CORS error';
       } else if (e.message.includes('401') || e.message.includes('403')) {
-        el.textContent = '✕ RLS blocking — disable RLS on tables in Supabase';
+        el.textContent = '✕ RLS blocking';
       } else if (e.message.includes('404') || e.message.includes('relation')) {
-        el.textContent = '✕ Tables missing — run SQL setup in Supabase';
+        el.textContent = '✕ Tables missing';
       } else {
-        el.textContent = `✕ ${e.message.substring(0, 60)}`;
+        el.textContent = `✕ DB error`;
       }
       el.style.color = 'var(--accent-red)';
-    }
+    });
   }
 }
 
 function setSyncStatus(state) {
-  const el = document.getElementById('sync-status');
-  if (!el) return;
   const map = {
-    syncing: ['⟳ Syncing…',     'var(--accent-warn)'],
-    ok:      ['✓ Synced',        'var(--accent-gym)' ],
-    error:   ['✕ Sync error',    'var(--accent-red)' ],
-    offline: ['◌ Offline cache', 'var(--muted)'      ],
+    syncing: ['⟳ Syncing…',  'var(--accent-warn)'],
+    ok:      ['✓ Synced',     'var(--accent-gym)' ],
+    error:   ['✕ Sync error', 'var(--accent-red)' ],
   };
-  const [text, color] = map[state] || map.offline;
-  el.textContent = text;
-  el.style.color = color;
+  const [text, color] = map[state] || ['◌ —', 'var(--muted)'];
+  ['sync-status', 'mobile-sync-status'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = color;
+  });
 }
 
 
@@ -977,7 +993,7 @@ function renderToday() {
   }
 }
 
-function saveLog() {
+async function saveLog() {
   const logs = getLogs();
   const idx = logs.findIndex(l => l.date === todayStr());
   const entry = {
@@ -990,7 +1006,7 @@ function saveLog() {
     note: document.getElementById('log-note').value.trim(),
   };
   if (idx >= 0) logs[idx] = entry; else logs.push(entry);
-  saveLogs(logs);
+  await saveLogs(logs);
   const msg = document.getElementById('log-saved-msg');
   msg.style.display = 'inline';
   setTimeout(() => { msg.style.display = 'none'; }, 2500);
@@ -1068,11 +1084,11 @@ function openWeekModal(w) {
   document.getElementById('modal-overlay').style.display = 'flex';
 }
 
-function toggleWeekDone(w) {
+async function toggleWeekDone(w) {
   let done = getWeeksDone();
   if (done.includes(w)) done = done.filter(x => x !== w);
   else done.push(w);
-  saveWeeksDone(done);
+  await saveWeeksDone(done);
   document.getElementById('modal-overlay').style.display = 'none';
   renderPlan();
 }
@@ -1215,7 +1231,7 @@ function toggleAlt(id, el) {
   el.textContent = open ? '⇄ hide alternative' : '⇄ show alternative';
 }
 
-function saveGymSession() {
+async function saveGymSession() {
   const exercises = GYM_DAYS[activeGymDay];
   const exerciseData = {};
   exercises.forEach((ex, i) => {
@@ -1229,14 +1245,14 @@ function saveGymSession() {
   const note = document.getElementById('gym-note').value.trim();
   const sessions = getGymSessions();
   sessions.push({ date: todayStr(), day: activeGymDay, exercises: exerciseData, note });
-  saveGymSessions(sessions);
+  await saveGymSessions(sessions);
 
   // Also mark gym in today's log
   const logs = getLogs();
   const idx = logs.findIndex(l => l.date === todayStr());
   if (idx >= 0) logs[idx].gym = `Day ${activeGymDay}`;
   else logs.push({ date: todayStr(), gym: `Day ${activeGymDay}`, emb:'', dsa:'', steps:'', energy:'ok', note:'' });
-  saveLogs(logs);
+  await saveLogs(logs);
 
   const msg = document.getElementById('gym-saved-msg');
   msg.style.display = 'inline';
@@ -1289,7 +1305,7 @@ function renderReview() {
   }
 }
 
-function saveReview() {
+async function saveReview() {
   const reviews = getReviews();
   reviews.push({
     date: todayStr(),
@@ -1298,7 +1314,7 @@ function saveReview() {
     fit: document.getElementById('rv-fit').value.trim(),
     adj: document.getElementById('rv-adj').value.trim(),
   });
-  saveReviews(reviews);
+  await saveReviews(reviews);
   document.getElementById('rv-emb').value = '';
   document.getElementById('rv-dsa').value = '';
   document.getElementById('rv-fit').value = '';
@@ -1419,7 +1435,7 @@ function jumpBackfill(i) {
   showBackfillDay();
 }
 
-function saveBackfill() {
+async function saveBackfill() {
   const ds = backfillQueue[backfillIdx];
   const logs = getLogs();
   const entry = {
@@ -1433,25 +1449,23 @@ function saveBackfill() {
   };
   const idx = logs.findIndex(l => l.date === ds);
   if (idx >= 0) logs[idx] = entry; else logs.push(entry);
-  saveLogs(logs);
+  await saveLogs(logs);
   backfillIdx++;
   showBackfillDay();
 }
 
-function skipBackfillDay() {
-  // Mark as "skipped" with a minimal stub so it won't surface again
+async function skipBackfillDay() {
   const ds = backfillQueue[backfillIdx];
   const logs = getLogs();
   if (!logs.find(l => l.date === ds)) {
     logs.push({ date: ds, emb:'', dsa:'', steps:'', gym:'', energy:'ok', note:'(skipped)', skipped: true });
-    saveLogs(logs);
+    await saveLogs(logs);
   }
   backfillIdx++;
   showBackfillDay();
 }
 
-function dismissAllBackfill() {
-  // Stub all remaining unlogged missed days as skipped silently
+async function dismissAllBackfill() {
   const logs = getLogs();
   const logged = new Set(logs.map(l => l.date));
   getMissedDays().forEach(ds => {
@@ -1459,7 +1473,7 @@ function dismissAllBackfill() {
       logs.push({ date: ds, emb:'', dsa:'', steps:'', gym:'', energy:'ok', note:'(skipped)', skipped: true });
     }
   });
-  saveLogs(logs);
+  await saveLogs(logs);
   document.getElementById('backfill-overlay').style.display = 'none';
   renderMissedBanner();
   renderToday();
@@ -1472,9 +1486,8 @@ function closeBackfill(e) {
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 updateSidebar();
 updateMobileHeader();
-renderToday();
-renderPlan();
-renderGymForm();
+// Show loading placeholder until Supabase responds
+document.getElementById('today-tasks').innerHTML = '<div class="empty-state" style="padding:20px 0">Loading…</div>';
 loadFromSupabase();
 </script>
 </body>
